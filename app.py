@@ -17,9 +17,9 @@ from animal_data import (
     get_animal_detail
 )
 
-# ------------------------------------
-# Optional OSS import (do NOT crash if missing)
-# ------------------------------------
+# -----------------------------
+# Optional OSS import
+# -----------------------------
 OSS_AVAILABLE = True
 try:
     import alibabacloud_oss_v2 as oss
@@ -27,18 +27,20 @@ try:
 except Exception:
     OSS_AVAILABLE = False
 
-# ------------------------------------
+
+# -----------------------------
 # Page config
-# ------------------------------------
+# -----------------------------
 st.set_page_config(
     page_title="Global Animal Explorer",
     page_icon="🐾",
     layout="wide"
 )
 
-# ------------------------------------
+
+# -----------------------------
 # File helpers
-# ------------------------------------
+# -----------------------------
 def allowed_file(filename: str) -> bool:
     if not filename or "." not in filename:
         return False
@@ -62,9 +64,10 @@ def read_image_as_data_url(uploaded_file) -> str:
 
     return f"data:{mime};base64,{b64}"
 
-# ------------------------------------
+
+# -----------------------------
 # OSS helpers (optional)
-# ------------------------------------
+# -----------------------------
 def oss_is_configured() -> bool:
     if not OSS_AVAILABLE:
         return False
@@ -116,23 +119,38 @@ def upload_to_oss_bytes(file_bytes: bytes, object_name: str) -> dict:
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-# ------------------------------------
+
+# -----------------------------
 # DashScope key handling
-# ------------------------------------
+# -----------------------------
 def get_dashscope_api_key() -> str:
+    """
+    Priority:
+    1) Runtime input (sidebar)
+    2) Streamlit secrets
+    3) Environment variables via config.py
+    """
     key = st.session_state.get("runtime_dashscope_key", "").strip()
     if key:
+        st.session_state["dashscope_key_source"] = "sidebar"
         return key
 
     try:
         if "DASHSCOPE_API_KEY" in st.secrets:
             sec = str(st.secrets["DASHSCOPE_API_KEY"]).strip()
             if sec:
+                st.session_state["dashscope_key_source"] = "secrets"
                 return sec
     except Exception:
         pass
 
-    return (config.DASHSCOPE_API_KEY or "").strip()
+    cfg = (config.DASHSCOPE_API_KEY or "").strip()
+    if cfg:
+        st.session_state["dashscope_key_source"] = "env"
+        return cfg
+
+    st.session_state["dashscope_key_source"] = "none"
+    return ""
 
 
 def build_openai_client():
@@ -145,12 +163,16 @@ def build_openai_client():
         base_url=config.DASHSCOPE_BASE_URL,
     )
 
-# ------------------------------------
+
+# -----------------------------
 # Offline fallback (optional)
-#   - Only works if torch is installed.
-#   - Will NOT crash if torch is missing.
-# ------------------------------------
+# -----------------------------
 def identify_animal_local(pil_image: Image.Image) -> str:
+    """
+    No-key fallback using ImageNet classification.
+    Works only if torch/torchvision are installed (local mode).
+    Will not crash the app if not available.
+    """
     try:
         import torch
         from torchvision import models
@@ -170,34 +192,51 @@ def identify_animal_local(pil_image: Image.Image) -> str:
 
         topk = torch.topk(probs, k=5)
 
+        preds = []
+        for score, idx in zip(topk.values.tolist(), topk.indices.tolist()):
+            label = categories[idx] if idx < len(categories) else f"class_{idx}"
+            preds.append((label, score))
+
+        # Helpful mustelid interpretation (for ferret-like cases)
+        mustelid_keywords = {"weasel", "polecat", "mink", "otter", "stoat", "ermine"}
+        top_labels = [p[0].lower() for p in preds]
+        mustelid_hit = any(any(k in lab for k in mustelid_keywords) for lab in top_labels)
+
         lines = []
         lines.append("**Offline no-key result (best effort):**")
         lines.append("")
-        for score, idx in zip(topk.values.tolist(), topk.indices.tolist()):
-            label = categories[idx] if idx < len(categories) else f"class_{idx}"
+        for label, score in preds:
             pct = round(score * 100, 1)
             lines.append(f"- {label} — {pct}%")
 
+        if mustelid_hit:
+            lines.append("")
+            lines.append(
+                "**Interpretation:** The model suggests a *mustelid-type animal* "
+                "(weasel/polecat/mink/otter). "
+                "If your pet is small, elongated, and domesticated, "
+                "**it could very likely be a ferret**."
+            )
+
         lines.append("")
         lines.append(
-            "**Note:** This offline model is general-purpose. "
-            "It may not reliably distinguish highly similar groups "
-            "(e.g., octopus/squid/cuttlefish; sea lion/seal/walrus)."
+            "**Note:** This offline classifier is general-purpose. "
+            "Species-level accuracy is limited compared with cloud vision models."
         )
         return "\n".join(lines)
 
     except Exception:
         return (
-            "Offline no-key identification is not available on this deployment.\n"
-            "This is expected on lightweight cloud builds.\n\n"
-            "You can still:\n"
-            "• Use Global Encyclopedia (GBIF) without any key.\n"
-            "• Add a DashScope API key to enable the advanced vision model."
+            "Offline no-key identification is not available on this deployment.\n\n"
+            "This is expected on Streamlit Cloud.\n"
+            "For stronger no-key results, run locally with:\n"
+            "`pip install -r requirements-local.txt`"
         )
 
-# ------------------------------------
+
+# -----------------------------
 # Cloud vision (ambiguity-aware)
-# ------------------------------------
+# -----------------------------
 def identify_animal_cloud(image_url: str) -> str:
     client = build_openai_client()
     if client is None:
@@ -243,9 +282,9 @@ def identify_animal_cloud(image_url: str) -> str:
 
 def identify_animal(image_url: str, pil_image: Image.Image) -> str:
     """
-    Robust two-layer strategy:
-    - If key exists and cloud call works -> cloud result
-    - Otherwise -> offline attempt (if available)
+    Robust two-level strategy:
+    - If cloud key works -> cloud result
+    - Otherwise -> offline attempt
     """
     try:
         text = identify_animal_cloud(image_url)
@@ -256,9 +295,10 @@ def identify_animal(image_url: str, pil_image: Image.Image) -> str:
 
     return identify_animal_local(pil_image)
 
-# ------------------------------------
+
+# -----------------------------
 # Global Encyclopedia (GBIF only)
-# ------------------------------------
+# -----------------------------
 @st.cache_data(ttl=60 * 60)
 def gbif_species_search(query: str, limit: int = 20):
     url = "https://api.gbif.org/v1/species/search"
@@ -276,9 +316,10 @@ def gbif_species_detail(key: int):
     r.raise_for_status()
     return r.json()
 
-# ------------------------------------
-# UI blocks
-# ------------------------------------
+
+# -----------------------------
+# UI: Home
+# -----------------------------
 def render_home():
     st.title("🐾 Global Animal Explorer")
 
@@ -288,10 +329,10 @@ This app includes three parts:
 
 1) **Featured Animals** — a curated local mini-encyclopedia.  
 2) **Global Animal Encyclopedia (GBIF)** — search millions of species.  
-3) **Image Animal Identifier** — robust mode that does not crash without a key.
+3) **Image Animal Identifier** — robust design for GitHub + Streamlit Cloud.
 
-**Cloud vision (optional):** richer output + look-alike confidence ranking.  
-**Offline fallback (optional):** best-effort guesses if available in the environment.
+**With a valid DashScope API key:** richer results + look-alike confidence ranking.  
+**Without a key:** best-effort offline fallback (fully available in local mode).
 """
     )
 
@@ -304,6 +345,9 @@ This app includes three parts:
         st.metric("Image upload", "Up to 16 MB")
 
 
+# -----------------------------
+# UI: Featured Categories
+# -----------------------------
 def render_featured_categories():
     st.title("🗂️ Featured Animal Categories")
 
@@ -404,6 +448,9 @@ def render_featured_animal_detail(animal_id: str):
                 st.write(f"- {t}")
 
 
+# -----------------------------
+# UI: Global Encyclopedia (GBIF)
+# -----------------------------
 def render_global_encyclopedia():
     st.title("🌍 Global Animal Encyclopedia (GBIF)")
 
@@ -413,7 +460,7 @@ def render_global_encyclopedia():
 
     query = st.text_input(
         "Search by common name or scientific name",
-        placeholder="e.g., tiger, Panthera tigris, emperor penguin"
+        placeholder="e.g., ferret, Mustela putorius furo, tiger, Panthera tigris"
     )
 
     col_filters = st.columns([1, 1, 1])
@@ -472,6 +519,9 @@ def render_global_encyclopedia():
         st.error(f"Global search failed: {e}")
 
 
+# -----------------------------
+# UI: Image Identifier
+# -----------------------------
 def render_identifier():
     st.title("🧠 Image Animal Identifier")
 
@@ -479,8 +529,8 @@ def render_identifier():
         """
 Upload an image and get an identification.
 
-- **No API key:** the app will try an offline fallback if available.  
-- **With API key:** you get richer results and **look-alike confidence rankings**.
+- **With a valid DashScope API key:** richer results + look-alike confidence rankings.  
+- **Without a key:** offline best-effort guesses (fully available in local mode).
 """
     )
 
@@ -506,7 +556,7 @@ Upload an image and get an identification.
         unique_name = f"{uuid.uuid4().hex}.{unique_ext}"
         timestamp = datetime.now().strftime("%Y%m%d")
 
-        # Use OSS only when fully available and configured
+        # Prefer OSS URL if fully configured, else base64
         if oss_is_configured():
             object_name = f"animal-images/{timestamp}/{unique_name}"
             up = upload_to_oss_bytes(file_bytes, object_name)
@@ -523,9 +573,10 @@ Upload an image and get an identification.
     except Exception as e:
         st.error(f"Failed to process image: {e}")
 
-# ------------------------------------
+
+# -----------------------------
 # Sidebar
-# ------------------------------------
+# -----------------------------
 def render_sidebar_key_box():
     st.sidebar.markdown("### 🔑 Optional Vision Upgrade")
 
@@ -533,12 +584,17 @@ def render_sidebar_key_box():
         "DashScope API Key (optional)",
         type="password",
         key="runtime_dashscope_key",
-        help="Leave empty for no-key mode."
+        help=(
+            "Do NOT commit keys to GitHub. "
+            "For Streamlit Cloud, set it in Secrets."
+        )
     )
 
-    if get_dashscope_api_key():
-        st.sidebar.success("Cloud vision enabled.")
-        key = get_dashscope_api_key()
+    key = get_dashscope_api_key()
+    source = st.session_state.get("dashscope_key_source", "unknown")
+
+    if key:
+        st.sidebar.success(f"Cloud vision enabled (source: {source}).")
         st.sidebar.caption(f"Key preview: ****{key[-4:]}")
     else:
         st.sidebar.info("No key detected. Using lightweight mode.")
@@ -546,9 +602,10 @@ def render_sidebar_key_box():
     if not OSS_AVAILABLE:
         st.sidebar.caption("OSS library not detected (image upload will use base64).")
 
-# ------------------------------------
+
+# -----------------------------
 # State + navigation
-# ------------------------------------
+# -----------------------------
 def ensure_state():
     st.session_state.setdefault("page", "home")
     st.session_state.setdefault("category_id", None)
