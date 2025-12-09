@@ -2,7 +2,6 @@ import os
 import uuid
 import base64
 from datetime import datetime
-from urllib.parse import quote
 
 import streamlit as st
 from PIL import Image
@@ -32,7 +31,7 @@ st.set_page_config(
 )
 
 # ------------------------------------
-# Helpers
+# Helpers (files / OSS)
 # ------------------------------------
 def allowed_file(filename: str) -> bool:
     if not filename or "." not in filename:
@@ -103,30 +102,80 @@ def upload_to_oss_bytes(file_bytes: bytes, object_name: str) -> dict:
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+# ------------------------------------
+# Helpers (DashScope Key handling)
+# ------------------------------------
+def get_dashscope_api_key() -> str:
+    """
+    Priority:
+    1) Runtime input in sidebar (session)
+    2) Streamlit secrets (if available)
+    3) config/env
+    """
+    # 1) runtime input
+    key = st.session_state.get("runtime_dashscope_key", "").strip()
+    if key:
+        return key
 
-def build_openai_client() -> OpenAI:
-    if not config.DASHSCOPE_API_KEY:
-        raise RuntimeError(
-            "Missing DASHSCOPE_API_KEY. Set it in environment variables or Streamlit secrets."
-        )
+    # 2) streamlit secrets
+    try:
+        if "DASHSCOPE_API_KEY" in st.secrets:
+            sec = str(st.secrets["DASHSCOPE_API_KEY"]).strip()
+            if sec:
+                return sec
+    except Exception:
+        pass
+
+    # 3) config/env
+    return (config.DASHSCOPE_API_KEY or "").strip()
+
+
+def build_openai_client():
+    key = get_dashscope_api_key()
+    if not key:
+        return None  # allow graceful UI handling
+
     return OpenAI(
-        api_key=config.DASHSCOPE_API_KEY,
+        api_key=key,
         base_url=config.DASHSCOPE_BASE_URL,
     )
 
-
+# ------------------------------------
+# Vision prompt (ambiguity-aware)
+# ------------------------------------
 def identify_animal(image_url: str) -> str:
     client = build_openai_client()
+    if client is None:
+        # Graceful message instead of raising exception
+        return (
+            "API key is not configured.\n\n"
+            "Please add your DashScope API key in one of these ways:\n"
+            "• Paste it in the sidebar 'DashScope API Key' field\n"
+            "• Or set it in Streamlit Secrets as DASHSCOPE_API_KEY\n"
+            "• Or set an environment variable DASHSCOPE_API_KEY\n"
+        )
 
     prompt = (
-        "Please carefully observe this image.\n"
-        "If there is an animal, describe it in the following format:\n\n"
-        "1. Animal name (common name + scientific name if possible)\n"
-        "2. Key characteristics\n"
-        "3. Behavior and lifestyle\n"
-        "4. Habitat\n"
-        "5. Interesting facts\n\n"
-        "If there is no animal, briefly describe the main content of the image."
+        "You are an expert wildlife identifier.\n"
+        "Carefully analyze the image.\n\n"
+        "If an animal is present, produce an ambiguity-aware identification:\n"
+        "Return the following format in English:\n\n"
+        "Top candidates (if ambiguous):\n"
+        "1) <Common name> (<scientific name if possible>) — <confidence %>\n"
+        "2) <Common name> (<scientific name if possible>) — <confidence %>\n"
+        "3) <Common name> (<scientific name if possible>) — <confidence %>\n\n"
+        "Rules:\n"
+        "- Confidence values should be reasonable and sum to about 100%.\n"
+        "- If the animal is very clear, you may provide 1 dominant candidate "
+        "and 1 minor alternative.\n"
+        "- Explicitly handle common look-alike groups, e.g.:\n"
+        "  octopus/squid/cuttlefish, sea otter/river otter, "
+        "  raccoon/red panda, sea lion/seal/walrus.\n\n"
+        "Then provide:\n"
+        "• Key visual cues used\n"
+        "• Short natural history notes (habitat, behavior)\n"
+        "• One interesting fact\n\n"
+        "If no animal is present, briefly describe the main content."
     )
 
     completion = client.chat.completions.create(
@@ -144,9 +193,8 @@ def identify_animal(image_url: str) -> str:
 
     return completion.choices[0].message.content
 
-
 # ------------------------------------
-# Global Encyclopedia (GBIF + Wikipedia)
+# Global Encyclopedia (GBIF only)
 # ------------------------------------
 @st.cache_data(ttl=60 * 60)
 def gbif_species_search(query: str, limit: int = 20):
@@ -165,84 +213,6 @@ def gbif_species_detail(key: int):
     r.raise_for_status()
     return r.json()
 
-
-# ---- Wikipedia improvement: search first, then summary ----
-@st.cache_data(ttl=60 * 60)
-def wikipedia_search_best_title(query: str):
-    """
-    Use MediaWiki search to find the most likely page title.
-    """
-    if not query:
-        return None
-
-    url = "https://en.wikipedia.org/w/api.php"
-    params = {
-        "action": "query",
-        "list": "search",
-        "srsearch": query,
-        "format": "json",
-        "utf8": 1,
-        "srlimit": 1,
-    }
-    r = requests.get(url, params=params, timeout=15)
-    if r.status_code != 200:
-        return None
-
-    data = r.json()
-    hits = data.get("query", {}).get("search", [])
-    if not hits:
-        return None
-
-    return hits[0].get("title")
-
-
-@st.cache_data(ttl=60 * 60)
-def wikipedia_summary_by_title(title: str):
-    if not title:
-        return None
-
-    safe_title = quote(title)
-    url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{safe_title}"
-    r = requests.get(url, timeout=15)
-    if r.status_code != 200:
-        return None
-    return r.json()
-
-
-def wikipedia_summary_smart(gbif_record: dict):
-    """
-    Try multiple strategies:
-    1) canonicalName
-    2) scientificName
-    3) fallback to GBIF 'species' field(s)
-    Each time: search best Wikipedia title first.
-    """
-    candidates = []
-
-    canonical = gbif_record.get("canonicalName")
-    sci = gbif_record.get("scientificName")
-    genus = gbif_record.get("genus")
-    species = gbif_record.get("species")
-
-    for c in (canonical, sci, species):
-        if c and c not in candidates:
-            candidates.append(c)
-
-    # If we have genus + species but no canonical
-    if genus and species and f"{genus} {species}" not in candidates:
-        candidates.append(f"{genus} {species}")
-
-    for q in candidates:
-        title = wikipedia_search_best_title(q)
-        if not title:
-            continue
-        summ = wikipedia_summary_by_title(title)
-        if summ and summ.get("type") != "disambiguation":
-            return summ
-
-    return None
-
-
 # ------------------------------------
 # UI blocks
 # ------------------------------------
@@ -253,12 +223,11 @@ def render_home():
         """
 This app includes three parts:
 
-1) **Featured Animals** — a curated mini-encyclopedia from your local dataset.  
-2) **Global Animal Encyclopedia** — search millions of species via live biodiversity databases.  
-3) **Image Animal Identifier** — upload an image and let a vision model describe the animal.
+1) **Featured Animals** — a curated local mini-encyclopedia.  
+2) **Global Animal Encyclopedia** — massive species coverage via GBIF.  
+3) **Image Animal Identifier** — upload an image for AI identification.
 
-**Featured** is meant to be representative and high-quality.  
-**Global** provides realistic “almost all animals” coverage.
+The image identifier supports **ambiguity-aware** outputs for look-alike animals.
 """
     )
 
@@ -266,7 +235,7 @@ This app includes three parts:
     with c1:
         st.metric("Featured animals (local)", len(ANIMALS_DATA))
     with c2:
-        st.metric("Global coverage", "Millions (via GBIF)")
+        st.metric("Global coverage", "Millions (GBIF)")
     with c3:
         st.metric("Image upload", "Up to 16 MB")
 
@@ -372,14 +341,11 @@ def render_featured_animal_detail(animal_id: str):
 
 
 def render_global_encyclopedia():
-    st.title("🌍 Global Animal Encyclopedia")
+    st.title("🌍 Global Animal Encyclopedia (GBIF)")
 
     st.markdown(
         """
-Search for *almost any animal species* using live global biodiversity data.
-
-- **GBIF** provides global taxonomy and species backbone records.
-- **Wikipedia** provides readable summaries when available (now with improved matching).
+Search for *almost any animal species* using live global biodiversity data from GBIF.
 """
     )
 
@@ -404,7 +370,7 @@ Search for *almost any animal species* using live global biodiversity data.
         return
 
     try:
-        with st.spinner("Searching global databases..."):
+        with st.spinner("Searching GBIF..."):
             results = gbif_species_search(query, limit=limit)
 
         if only_animals_hint:
@@ -436,29 +402,9 @@ Search for *almost any animal species* using live global biodiversity data.
                 if genus:
                     st.write(f"**Genus:** {genus}")
 
-                colA, colB = st.columns([1, 1])
-
-                with colA:
-                    if st.button("Load GBIF details", key=f"gbif_{key}"):
-                        detail = gbif_species_detail(key)
-                        st.json(detail)
-
-                with colB:
-                    if st.button("Load Wikipedia summary", key=f"wp_{key}"):
-                        summ = wikipedia_summary_smart(r)
-
-                        if not summ:
-                            st.info("No suitable Wikipedia summary found for this record.")
-                        else:
-                            st.markdown(f"#### {summ.get('title', canonical)}")
-                            thumb = summ.get("thumbnail", {}).get("source")
-                            if thumb:
-                                st.image(thumb, use_container_width=True)
-                            extract = summ.get("extract")
-                            if extract:
-                                st.write(extract)
-                            else:
-                                st.info("Wikipedia page found, but no summary text is available.")
+                if st.button("Load GBIF details", key=f"gbif_{key}"):
+                    detail = gbif_species_detail(key)
+                    st.json(detail)
 
     except Exception as e:
         st.error(f"Global search failed: {e}")
@@ -469,7 +415,7 @@ def render_identifier():
 
     st.markdown(
         """
-Upload an image and the model will identify animals and provide science notes.
+Upload an image and the model will identify animals and provide **confidence-ranked candidates** for look-alike species.
 
 If OSS is configured, the image will be uploaded and analyzed by public URL.  
 Otherwise the app will try a base64 data-URL fallback.
@@ -522,6 +468,29 @@ Otherwise the app will try a base64 data-URL fallback.
     except Exception as e:
         st.error(f"Failed to process image: {e}")
 
+# ------------------------------------
+# Sidebar: runtime key input
+# ------------------------------------
+def render_sidebar_key_box():
+    st.sidebar.markdown("### 🔑 Vision API Settings")
+
+    st.sidebar.text_input(
+        "DashScope API Key",
+        type="password",
+        key="runtime_dashscope_key",
+        help=(
+            "Paste your DashScope API key here to enable image identification. "
+            "This value stays in session memory and is not written to your code."
+        )
+    )
+
+    # show status
+    if get_dashscope_api_key():
+        st.sidebar.success("API key detected for this session.")
+    else:
+        st.sidebar.info(
+            "No API key found. Image identification will show instructions until you add one."
+        )
 
 # ------------------------------------
 # State + navigation
@@ -541,19 +510,19 @@ def sidebar_nav():
     if st.sidebar.button("⭐ Featured Encyclopedia"):
         st.session_state["page"] = "featured_categories"
 
-    if st.sidebar.button("🌍 Global Encyclopedia"):
+    if st.sidebar.button("🌍 Global Encyclopedia (GBIF)"):
         st.session_state["page"] = "global"
 
     if st.sidebar.button("🧠 Identify an Image"):
         st.session_state["page"] = "identify"
 
     st.sidebar.markdown("---")
-    st.sidebar.caption("Store secrets in environment variables or Streamlit secrets.")
 
 
 def main():
     ensure_state()
     sidebar_nav()
+    render_sidebar_key_box()
 
     page = st.session_state["page"]
 
