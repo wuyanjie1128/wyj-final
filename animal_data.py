@@ -1,5 +1,6 @@
 # Featured Animal Database (English)
-# Curated representative animals for each category.
+# A curated set of representative animals for each category.
+# Global coverage is provided by GBIF in the app.
 
 ANIMAL_CATEGORIES = {
     "mammals": {
@@ -7,10 +8,9 @@ ANIMAL_CATEGORIES = {
         "icon": "fa-paw",
         "color": "from-orange-400 to-red-500",
         "description": (
-            "Warm-blooded vertebrates characterized by hair or fur, "
-            "milk production, and typically live birth. Mammals range from "
-            "tiny bats to the largest whales and show complex behaviors "
-            "and diverse ecological roles."
+            "Warm-blooded vertebrates characterized by hair or fur, milk production, "
+            "and typically live birth. Mammals range from tiny insectivores to the "
+            "largest whales and show complex behaviors and diverse ecological roles."
         ),
         "count": 5500
     },
@@ -19,9 +19,9 @@ ANIMAL_CATEGORIES = {
         "icon": "fa-dove",
         "color": "from-blue-400 to-cyan-500",
         "description": (
-            "Feathered, warm-blooded vertebrates with beaks. Many fly, "
-            "while others are specialized for running or swimming. "
-            "Birds are essential for pollination, seed dispersal, and ecosystem balance."
+            "Feathered, warm-blooded vertebrates with beaks. Many species fly, while "
+            "others are specialized for running or swimming. Birds are essential for "
+            "pollination, seed dispersal, and ecosystem balance."
         ),
         "count": 10000
     },
@@ -30,9 +30,9 @@ ANIMAL_CATEGORIES = {
         "icon": "fa-dragon",
         "color": "from-green-400 to-emerald-500",
         "description": (
-            "Cold-blooded vertebrates usually covered in scales. "
-            "Most lay eggs, and many are key predators in their habitats. "
-            "They inhabit deserts, forests, wetlands, and oceans."
+            "Cold-blooded vertebrates usually covered in scales. Most lay eggs, and many "
+            "are key predators in their habitats. They inhabit deserts, forests, wetlands, "
+            "and oceans."
         ),
         "count": 10000
     },
@@ -41,9 +41,9 @@ ANIMAL_CATEGORIES = {
         "icon": "fa-frog",
         "color": "from-teal-400 to-green-500",
         "description": (
-            "Moist-skinned vertebrates that often transition between aquatic "
-            "and terrestrial life stages. They are highly sensitive to environmental changes "
-            "and are important indicators of ecosystem health."
+            "Moist-skinned vertebrates that often transition between aquatic and terrestrial "
+            "life stages. They are highly sensitive to environmental changes and are important "
+            "indicators of ecosystem health."
         ),
         "count": 7000
     },
@@ -52,9 +52,9 @@ ANIMAL_CATEGORIES = {
         "icon": "fa-fish",
         "color": "from-indigo-400 to-blue-500",
         "description": (
-            "Aquatic vertebrates that breathe mostly through gills. "
-            "They include jawless, cartilaginous, and bony fish with extraordinary "
-            "adaptations to reefs, rivers, deep seas, and polar waters."
+            "Aquatic vertebrates that breathe mostly through gills. They include jawless, "
+            "cartilaginous, and bony fish with extraordinary adaptations to reefs, rivers, "
+            "deep seas, and polar waters."
         ),
         "count": 32000
     },
@@ -101,25 +101,30 @@ def _animal(
     }
 
 
+# Expanded featured set (representative, not exhaustive)
 ANIMALS_DATA = {
-    # -------------------
     # Mammals
-    # -------------------
+    "ferret": _animal(
+        "Ferret", "mammals", "Mustela putorius furo", "Domesticated",
+        "https://images.unsplash.com/photo-1540573133985-87b6da6d54a9?w=800",
+        "A domesticated mustelid known for a slender body, playful behavior, and curiosity.",
+        habitat="Human care; historically derived from European polecats",
+        distribution="Worldwide (domesticated)",
+        facts=["Often confused with weasels, mink, and polecats in photos."]
+    ),
     "giant_panda": _animal(
         "Giant Panda", "mammals", "Ailuropoda melanoleuca", "Vulnerable (VU)",
         "https://images.unsplash.com/photo-1540573133985-87b6da6d54a9?w=800",
         "A bamboo specialist endemic to China with distinctive black-and-white fur.",
         habitat="Temperate mountain forests with bamboo",
-        distribution="China",
-        threats=["Habitat fragmentation", "Climate impacts on bamboo"]
+        distribution="China"
     ),
     "tiger": _animal(
         "Tiger", "mammals", "Panthera tigris", "Endangered (EN)",
         "https://images.unsplash.com/photo-1546182990-dffeafbe841d?w=800",
         "The largest cat species, a powerful solitary predator with unique stripe patterns.",
         habitat="Forests, grasslands, wetlands",
-        distribution="Asia",
-        threats=["Poaching", "Habitat loss"]
+        distribution="Asia"
     ),
     "african_elephant": _animal(
         "African Bush Elephant", "mammals", "Loxodonta africana", "Vulnerable (VU)",
@@ -140,36 +145,21 @@ ANIMALS_DATA = {
         "https://images.unsplash.com/photo-1525869916826-972885c91c1e?w=800",
         "A sea-ice-dependent predator superbly adapted to Arctic conditions.",
         habitat="Arctic sea ice and coasts",
-        distribution="Arctic Circle",
-        threats=["Sea-ice loss"]
+        distribution="Arctic Circle"
     ),
-    "red_kangaroo": _animal(
-        "Red Kangaroo", "mammals", "Osphranter rufus", "Least Concern (LC)",
-        "https://images.unsplash.com/photo-1526336024174-0d1f4a3b5d2e?w=800",
-        "The largest marsupial, adapted to Australia’s arid interior.",
-        habitat="Semi-arid and arid landscapes",
-        distribution="Australia"
-    ),
-    "koala": _animal(
-        "Koala", "mammals", "Phascolarctos cinereus", "Vulnerable (VU)",
+    "red_panda": _animal(
+        "Red Panda", "mammals", "Ailurus fulgens", "Endangered (EN)",
         "https://images.unsplash.com/photo-1526336024174-7c8d9e0f1a2b?w=800",
-        "A eucalyptus specialist with a low-energy lifestyle and strong tree dependence.",
-        habitat="Eucalyptus forests",
-        distribution="Australia"
+        "A forest-dwelling mammal often confused with raccoons due to facial markings.",
+        habitat="Temperate forests with bamboo",
+        distribution="Himalayas and southwestern China"
     ),
-    "platypus": _animal(
-        "Platypus", "mammals", "Ornithorhynchus anatinus", "Near Threatened (NT)",
-        "https://images.unsplash.com/photo-1601758125946-6ec2ef64daf8?w=800",
-        "An egg-laying mammal with electroreception and a duck-like bill.",
-        habitat="Rivers and freshwater systems",
-        distribution="Eastern Australia, Tasmania"
-    ),
-    "blue_whale": _animal(
-        "Blue Whale", "mammals", "Balaenoptera musculus", "Endangered (EN)",
-        "https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=800",
-        "The largest animal ever known to have lived, feeding mainly on krill.",
-        habitat="Open oceans",
-        distribution="Worldwide"
+    "raccoon": _animal(
+        "Raccoon", "mammals", "Procyon lotor", "Least Concern (LC)",
+        "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?w=800",
+        "An adaptable omnivore known for a mask-like face and dexterous paws.",
+        habitat="Forests, wetlands, urban areas",
+        distribution="North America; introduced elsewhere"
     ),
     "sea_otter": _animal(
         "Sea Otter", "mammals", "Enhydra lutris", "Endangered (EN) in some regions",
@@ -178,10 +168,15 @@ ANIMALS_DATA = {
         habitat="Coastal kelp forests",
         distribution="North Pacific"
     ),
+    "river_otter": _animal(
+        "North American River Otter", "mammals", "Lontra canadensis", "Least Concern (LC)",
+        "https://images.unsplash.com/photo-1540573133985-4d7d1a1f5c1f?w=800",
+        "A freshwater otter with playful behavior, often confused with sea otters in photos.",
+        habitat="Rivers, lakes, wetlands",
+        distribution="North America"
+    ),
 
-    # -------------------
     # Birds
-    # -------------------
     "golden_eagle": _animal(
         "Golden Eagle", "birds", "Aquila chrysaetos", "Least Concern (LC)",
         "https://images.unsplash.com/photo-1611689342806-0863700ce1e4?w=800",
@@ -210,24 +205,8 @@ ANIMALS_DATA = {
         habitat="Savannas and semi-deserts",
         distribution="Africa"
     ),
-    "scarlet_macaw": _animal(
-        "Scarlet Macaw", "birds", "Ara macao", "Least Concern (LC)",
-        "https://images.unsplash.com/photo-1540573133985-1fdc1b7b5c3f?w=800",
-        "A brilliantly colored parrot of tropical forests.",
-        habitat="Lowland rainforests",
-        distribution="Central and South America"
-    ),
-    "snowy_owl": _animal(
-        "Snowy Owl", "birds", "Bubo scandiacus", "Vulnerable (VU)",
-        "https://images.unsplash.com/photo-1540573133985-2b3c4d5e6f7a?w=800",
-        "A striking white owl adapted to Arctic tundra.",
-        habitat="Tundra",
-        distribution="Arctic regions"
-    ),
 
-    # -------------------
     # Reptiles
-    # -------------------
     "nile_crocodile": _animal(
         "Nile Crocodile", "reptiles", "Crocodylus niloticus", "Least Concern (LC)",
         "https://images.unsplash.com/photo-1535083783855-76ae62b2914e?w=800",
@@ -242,24 +221,8 @@ ANIMALS_DATA = {
         habitat="Dry forests and savannas",
         distribution="Indonesia"
     ),
-    "green_sea_turtle": _animal(
-        "Green Sea Turtle", "reptiles", "Chelonia mydas", "Endangered (EN)",
-        "https://images.unsplash.com/photo-1544551763-7f2a9b4c1b3e?w=800",
-        "A large marine turtle that becomes more herbivorous as it matures.",
-        habitat="Tropical and subtropical seas",
-        distribution="Worldwide"
-    ),
-    "king_cobra": _animal(
-        "King Cobra", "reptiles", "Ophiophagus hannah", "Vulnerable (VU)",
-        "https://images.unsplash.com/photo-1518791841217-8f162f1e1131?w=800",
-        "The world’s longest venomous snake, known for feeding on other snakes.",
-        habitat="Forests and agricultural edges",
-        distribution="South and Southeast Asia"
-    ),
 
-    # -------------------
     # Amphibians
-    # -------------------
     "red_eyed_tree_frog": _animal(
         "Red-Eyed Tree Frog", "amphibians", "Agalychnis callidryas", "Least Concern (LC)",
         "https://images.unsplash.com/photo-1564349683136-77e08dba1ef7?w=800",
@@ -271,40 +234,17 @@ ANIMALS_DATA = {
         "Axolotl", "amphibians", "Ambystoma mexicanum", "Critically Endangered (CR)",
         "https://images.unsplash.com/photo-1583511655942-70c5d7b0e0d4?w=800",
         "A neotenic salamander that retains larval features throughout life.",
-        habitat="Freshwater lakes and canals",
+        habitat="Freshwater canals and lakes",
         distribution="Mexico"
     ),
-    "american_bullfrog": _animal(
-        "American Bullfrog", "amphibians", "Lithobates catesbeianus", "Least Concern (LC)",
-        "https://images.unsplash.com/photo-1526336024174-6a7b8c9d0e1f?w=800",
-        "A large frog that can be invasive outside its native range.",
-        habitat="Ponds, lakes, slow rivers",
-        distribution="North America; introduced elsewhere"
-    ),
 
-    # -------------------
     # Fish
-    # -------------------
     "great_white_shark": _animal(
         "Great White Shark", "fish", "Carcharodon carcharias", "Vulnerable (VU)",
         "https://images.unsplash.com/photo-1560275619-4662e36fa65c?w=800",
         "A powerful marine predator playing a key role in ocean ecosystems.",
         habitat="Temperate coastal and offshore waters",
         distribution="Worldwide"
-    ),
-    "whale_shark": _animal(
-        "Whale Shark", "fish", "Rhincodon typus", "Endangered (EN)",
-        "https://images.unsplash.com/photo-1544551763-92b8b3b6f0f5?w=800",
-        "The largest fish on Earth, a gentle filter-feeder.",
-        habitat="Warm tropical seas",
-        distribution="Worldwide"
-    ),
-    "clownfish": _animal(
-        "Clownfish", "fish", "Amphiprioninae (subfamily)", "Varies by species",
-        "https://images.unsplash.com/photo-1516685018646-549d2d0b0f24?w=800",
-        "Famous for symbiosis with sea anemones.",
-        habitat="Coral reefs",
-        distribution="Indo-Pacific"
     ),
     "seahorse": _animal(
         "Seahorse", "fish", "Hippocampus (genus)", "Varies by species",
@@ -314,9 +254,7 @@ ANIMALS_DATA = {
         distribution="Worldwide"
     ),
 
-    # -------------------
     # Insects
-    # -------------------
     "monarch_butterfly": _animal(
         "Monarch Butterfly", "insects", "Danaus plexippus", "Endangered (EN)",
         "https://images.unsplash.com/photo-1526336024174-e58f5cdd8e13?w=800",
@@ -330,13 +268,6 @@ ANIMALS_DATA = {
         "A key pollinator essential to agriculture and natural ecosystems.",
         habitat="Varied",
         distribution="Worldwide"
-    ),
-    "ladybird": _animal(
-        "Seven-spotted Ladybird", "insects", "Coccinella septempunctata", "Least Concern (LC)",
-        "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?w=800",
-        "A beneficial predator of aphids and other crop pests.",
-        habitat="Gardens, fields",
-        distribution="Europe; introduced elsewhere"
     ),
 }
 
