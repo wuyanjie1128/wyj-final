@@ -2,6 +2,7 @@ import os
 import uuid
 import base64
 from datetime import datetime
+from urllib.parse import quote
 
 import streamlit as st
 from PIL import Image
@@ -29,37 +30,6 @@ st.set_page_config(
     page_icon="🐾",
     layout="wide"
 )
-
-# ------------------------------------
-# English UI labels for categories
-# (UI-only; your data file can stay unchanged)
-# ------------------------------------
-CATEGORY_EN = {
-    "mammals": {
-        "name": "Mammals",
-        "description": "Warm-blooded vertebrates that give live birth and nurse their young.",
-    },
-    "birds": {
-        "name": "Birds",
-        "description": "Feathered warm-blooded vertebrates, many capable of flight.",
-    },
-    "reptiles": {
-        "name": "Reptiles",
-        "description": "Cold-blooded vertebrates with scales, mostly egg-laying.",
-    },
-    "amphibians": {
-        "name": "Amphibians",
-        "description": "Animals that live both in water and on land with metamorphosis.",
-    },
-    "fish": {
-        "name": "Fish",
-        "description": "Aquatic vertebrates that breathe using gills.",
-    },
-    "insects": {
-        "name": "Insects",
-        "description": "Six-legged arthropods with exoskeletons.",
-    },
-}
 
 # ------------------------------------
 # Helpers
@@ -180,9 +150,6 @@ def identify_animal(image_url: str) -> str:
 # ------------------------------------
 @st.cache_data(ttl=60 * 60)
 def gbif_species_search(query: str, limit: int = 20):
-    """
-    Search GBIF species by name.
-    """
     url = "https://api.gbif.org/v1/species/search"
     params = {"q": query, "limit": limit}
     r = requests.get(url, params=params, timeout=15)
@@ -193,35 +160,87 @@ def gbif_species_search(query: str, limit: int = 20):
 
 @st.cache_data(ttl=60 * 60)
 def gbif_species_detail(key: int):
-    """
-    Get a single species record by GBIF key.
-    """
     url = f"https://api.gbif.org/v1/species/{key}"
     r = requests.get(url, timeout=15)
     r.raise_for_status()
     return r.json()
 
 
+# ---- Wikipedia improvement: search first, then summary ----
 @st.cache_data(ttl=60 * 60)
-def wikipedia_summary(title: str):
+def wikipedia_search_best_title(query: str):
     """
-    Fetch an English summary from Wikipedia REST API.
+    Use MediaWiki search to find the most likely page title.
     """
-    url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{title}"
+    if not query:
+        return None
+
+    url = "https://en.wikipedia.org/w/api.php"
+    params = {
+        "action": "query",
+        "list": "search",
+        "srsearch": query,
+        "format": "json",
+        "utf8": 1,
+        "srlimit": 1,
+    }
+    r = requests.get(url, params=params, timeout=15)
+    if r.status_code != 200:
+        return None
+
+    data = r.json()
+    hits = data.get("query", {}).get("search", [])
+    if not hits:
+        return None
+
+    return hits[0].get("title")
+
+
+@st.cache_data(ttl=60 * 60)
+def wikipedia_summary_by_title(title: str):
+    if not title:
+        return None
+
+    safe_title = quote(title)
+    url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{safe_title}"
     r = requests.get(url, timeout=15)
     if r.status_code != 200:
         return None
     return r.json()
 
 
-def best_wikipedia_title(gbif_record: dict):
+def wikipedia_summary_smart(gbif_record: dict):
     """
-    Try to guess a good Wikipedia title from GBIF record.
-    Usually the scientific name works best.
+    Try multiple strategies:
+    1) canonicalName
+    2) scientificName
+    3) fallback to GBIF 'species' field(s)
+    Each time: search best Wikipedia title first.
     """
-    sci = gbif_record.get("scientificName")
+    candidates = []
+
     canonical = gbif_record.get("canonicalName")
-    return canonical or sci
+    sci = gbif_record.get("scientificName")
+    genus = gbif_record.get("genus")
+    species = gbif_record.get("species")
+
+    for c in (canonical, sci, species):
+        if c and c not in candidates:
+            candidates.append(c)
+
+    # If we have genus + species but no canonical
+    if genus and species and f"{genus} {species}" not in candidates:
+        candidates.append(f"{genus} {species}")
+
+    for q in candidates:
+        title = wikipedia_search_best_title(q)
+        if not title:
+            continue
+        summ = wikipedia_summary_by_title(title)
+        if summ and summ.get("type") != "disambiguation":
+            return summ
+
+    return None
 
 
 # ------------------------------------
@@ -238,7 +257,8 @@ This app includes three parts:
 2) **Global Animal Encyclopedia** — search millions of species via live biodiversity databases.  
 3) **Image Animal Identifier** — upload an image and let a vision model describe the animal.
 
-This structure is how you realistically get *“almost all animals in the world”* in a Streamlit app.
+**Featured** is meant to be representative and high-quality.  
+**Global** provides realistic “almost all animals” coverage.
 """
     )
 
@@ -257,16 +277,15 @@ def render_featured_categories():
     cols = st.columns(3)
     i = 0
     for cat_id, info in ANIMAL_CATEGORIES.items():
-        en = CATEGORY_EN.get(cat_id, {})
-        name = en.get("name", cat_id.title())
-        desc = en.get("description", info.get("description", ""))
+        featured_count = len(get_animals_by_category(cat_id))
 
         with cols[i % 3]:
-            st.markdown(f"### {name}")
-            st.caption(desc)
-            st.write(f"Estimated species count: **{info.get('count', 'N/A')}**")
+            st.markdown(f"### {info.get('name', cat_id.title())}")
+            st.caption(info.get("description", ""))
+            st.write(f"Estimated species count worldwide: **{info.get('count', 'N/A')}**")
+            st.write(f"Featured examples in this category: **{featured_count}**")
 
-            if st.button(f"Open {name}", key=f"open_{cat_id}"):
+            if st.button(f"Open {info.get('name', cat_id.title())}", key=f"open_{cat_id}"):
                 st.session_state["page"] = "featured_category"
                 st.session_state["category_id"] = cat_id
         i += 1
@@ -278,14 +297,10 @@ def render_featured_category_detail(category_id: str):
         return
 
     info = ANIMAL_CATEGORIES[category_id]
-    en = CATEGORY_EN.get(category_id, {})
-    name = en.get("name", category_id.title())
-    desc = en.get("description", info.get("description", ""))
-
     animals = get_animals_by_category(category_id)
 
-    st.title(f"📌 {name}")
-    st.caption(desc)
+    st.title(f"📌 {info.get('name', category_id.title())}")
+    st.caption(info.get("description", ""))
 
     if not animals:
         st.info("No featured animals in this category yet.")
@@ -308,7 +323,7 @@ def render_featured_category_detail(category_id: str):
 
             short = animal.get("description", "")
             if short:
-                st.write(short[:120] + ("..." if len(short) > 120 else ""))
+                st.write(short[:140] + ("..." if len(short) > 140 else ""))
 
             if st.button("View details", key=f"feat_detail_{animal_id}"):
                 st.session_state["page"] = "featured_animal"
@@ -322,7 +337,6 @@ def render_featured_animal_detail(animal_id: str):
         return
 
     category_info = ANIMAL_CATEGORIES.get(animal.get("category", ""), {})
-    cat_en = CATEGORY_EN.get(animal.get("category", ""), {})
 
     st.title(f"🦁 {animal.get('name', animal_id)}")
     if animal.get("scientific_name"):
@@ -333,7 +347,7 @@ def render_featured_animal_detail(animal_id: str):
         if animal.get("image"):
             st.image(animal["image"], use_container_width=True)
 
-        st.markdown(f"**Category:** {cat_en.get('name', animal.get('category', ''))}")
+        st.markdown(f"**Category:** {category_info.get('name', animal.get('category', ''))}")
         st.markdown(f"**Conservation status:** {animal.get('conservation_status', 'N/A')}")
         st.markdown(f"**Habitat:** {animal.get('habitat', 'N/A')}")
         st.markdown(f"**Distribution:** {animal.get('distribution', 'N/A')}")
@@ -364,13 +378,15 @@ def render_global_encyclopedia():
         """
 Search for *almost any animal species* using live global biodiversity data.
 
-Data flow:
-- **GBIF** provides taxonomy and species backbone records.
-- **Wikipedia** provides readable science summaries when available.
+- **GBIF** provides global taxonomy and species backbone records.
+- **Wikipedia** provides readable summaries when available (now with improved matching).
 """
     )
 
-    query = st.text_input("Search by common name or scientific name", placeholder="e.g., tiger, Panthera tigris, emperor penguin")
+    query = st.text_input(
+        "Search by common name or scientific name",
+        placeholder="e.g., tiger, Panthera tigris, emperor penguin"
+    )
 
     col_filters = st.columns([1, 1, 1])
     with col_filters[0]:
@@ -391,8 +407,6 @@ Data flow:
         with st.spinner("Searching global databases..."):
             results = gbif_species_search(query, limit=limit)
 
-        # Soft filtering for animals: we can't perfectly filter by kingdom in all cases,
-        # but we can prioritize Animalia.
         if only_animals_hint:
             animalia = [r for r in results if (r.get("kingdom") == "Animalia")]
             others = [r for r in results if (r.get("kingdom") != "Animalia")]
@@ -406,6 +420,7 @@ Data flow:
             return
 
         st.markdown("### Search results")
+
         for r in results[:limit]:
             key = r.get("key")
             canonical = r.get("canonicalName") or r.get("scientificName", "Unknown")
@@ -429,24 +444,21 @@ Data flow:
                         st.json(detail)
 
                 with colB:
-                    wp_title = best_wikipedia_title(r)
-                    if wp_title:
-                        if st.button("Load Wikipedia summary", key=f"wp_{key}"):
-                            summ = wikipedia_summary(wp_title)
-                            if not summ:
-                                st.warning("Wikipedia summary not found for this title.")
+                    if st.button("Load Wikipedia summary", key=f"wp_{key}"):
+                        summ = wikipedia_summary_smart(r)
+
+                        if not summ:
+                            st.info("No suitable Wikipedia summary found for this record.")
+                        else:
+                            st.markdown(f"#### {summ.get('title', canonical)}")
+                            thumb = summ.get("thumbnail", {}).get("source")
+                            if thumb:
+                                st.image(thumb, use_container_width=True)
+                            extract = summ.get("extract")
+                            if extract:
+                                st.write(extract)
                             else:
-                                # display summary and image if present
-                                st.markdown(f"#### {summ.get('title', wp_title)}")
-                                if summ.get("thumbnail", {}).get("source"):
-                                    st.image(summ["thumbnail"]["source"], use_container_width=True)
-                                text = summ.get("extract")
-                                if text:
-                                    st.write(text)
-                                else:
-                                    st.info("No summary text available.")
-                    else:
-                        st.caption("No Wikipedia title guess available.")
+                                st.info("Wikipedia page found, but no summary text is available.")
 
     except Exception as e:
         st.error(f"Global search failed: {e}")
@@ -457,7 +469,7 @@ def render_identifier():
 
     st.markdown(
         """
-Upload an image and the model will identify animals and provide nature-science notes.
+Upload an image and the model will identify animals and provide science notes.
 
 If OSS is configured, the image will be uploaded and analyzed by public URL.  
 Otherwise the app will try a base64 data-URL fallback.
@@ -536,7 +548,7 @@ def sidebar_nav():
         st.session_state["page"] = "identify"
 
     st.sidebar.markdown("---")
-    st.sidebar.caption("Secrets should be stored in environment variables or Streamlit secrets.")
+    st.sidebar.caption("Store secrets in environment variables or Streamlit secrets.")
 
 
 def main():
