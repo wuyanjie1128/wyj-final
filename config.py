@@ -11,7 +11,7 @@ DASHSCOPE_BASE_URL = os.getenv(
 QWEN_MODEL = os.getenv("QWEN_MODEL", "qwen3-vl-plus")
 
 # -----------------------------
-# Alibaba Cloud OSS
+# Alibaba Cloud OSS (optional)
 # -----------------------------
 OSS_ACCESS_KEY_ID = os.getenv("OSS_ACCESS_KEY_ID", "")
 OSS_ACCESS_KEY_SECRET = os.getenv("OSS_ACCESS_KEY_SECRET", "")
@@ -25,3 +25,4 @@ OSS_BUCKET = os.getenv("OSS_BUCKET", "")
 UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", "temp_uploads")
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "bmp", "webp"}
 MAX_CONTENT_LENGTH = 16 * 1024 * 1024
+
